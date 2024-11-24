@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"crypto/rand"
+	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
@@ -40,7 +41,6 @@ func (c *channelTask) taskType() taskType {
 
 func (c *channelTask) start() {
 	c.isRunning.Store(true)
-	go c.reCreateloop()
 	go c.sendLoop()
 	go c.run()
 }
@@ -81,6 +81,8 @@ func (c *channelTask) run() {
 
 	c.createChannelFinished = true
 
+	log.Printf("创建频道完成...")
+
 }
 
 // 创建频道 (startIndex, endIndex]
@@ -92,21 +94,17 @@ func (c *channelTask) createChannel(startIndex, endIndex int) {
 	if startIndex >= len(c.channelIds) {
 		return
 	}
-	if !c.createChannelFinished {
-		return
-	}
 
 	channelIds := c.channelIds[startIndex:endIndex]
 
 	// 创建频道
 	c.createChannelWithIds(channelIds)
+
 }
 
 func (c *channelTask) createChannelWithIds(channelIds []string) {
 	onlineTask := c.getOnlineTask()
-	if onlineTask == nil {
-		return
-	}
+
 	// 生成订阅者
 	subscribers := make([]string, 0, c.channelCfg.Subscriber.Count)
 	// 如果订阅者在线人数小于等于频道在线人数，则直接使用订阅者
@@ -134,21 +132,20 @@ func (c *channelTask) createChannelWithIds(channelIds []string) {
 		if !c.isRunning.Load() {
 			break
 		}
+
 		channelId := channelId
+
 		g.Go(func() error {
-			if !c.isRunning.Load() {
-				return nil
-			}
 			err := c.s.api.createChannel(&channelCreateReq{
 				channelInfoReq: channelInfoReq{
 					ChannelId:   channelId,
 					ChannelType: uint8(c.channelCfg.Type),
 				},
 				Subscribers: subscribers,
+				Reset:       1,
 			})
 			if err != nil {
-				log.Printf("create channel error: %s", err)
-				return nil
+				panic(fmt.Sprintf("create channel error: %s", err))
 			}
 			c.channelStatsMapLock.Lock()
 			c.channelStatsMap[channelId] = &channelStats{}
@@ -158,21 +155,6 @@ func (c *channelTask) createChannelWithIds(channelIds []string) {
 
 	}
 	_ = g.Wait()
-}
-
-func (c *channelTask) reCreateloop() {
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ticker.C:
-			c.reCreateChannelIfNeeded()
-		case <-c.stopC:
-			return
-		}
-	}
-
 }
 
 func (c *channelTask) sendLoop() {
@@ -190,6 +172,10 @@ func (c *channelTask) sendLoop() {
 }
 
 func (c *channelTask) willSendMsg() {
+
+	if !c.createChannelFinished {
+		return
+	}
 
 	c.tick++
 

@@ -33,8 +33,8 @@ func NewOptions(opts ...Option) *Options {
 		Addr:                  ":8080",
 		DataDir:               "./stressdata",
 		OnlinePerBatch:        100,
-		CreateChannelPerBatch: 10,
-		MsgByteSize:           1024,
+		CreateChannelPerBatch: 100,
+		MsgByteSize:           512,
 	}
 	for _, o := range opts {
 		o(defaultOpts)

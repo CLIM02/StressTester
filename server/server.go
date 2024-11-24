@@ -88,6 +88,13 @@ func (s *server) startTask() error {
 		t.start()
 	}
 
+	// 单聊
+	if s.taskCfg.P2p != nil {
+		p := newP2pTask(s.taskCfg.P2p, s)
+		s.addTask(p)
+		p.start()
+	}
+
 	return nil
 }
 

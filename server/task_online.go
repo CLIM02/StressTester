@@ -39,6 +39,11 @@ func (t *onlineTask) taskType() taskType {
 
 func (t *onlineTask) start() {
 	t.isRunning.Store(true)
+	// 生成用户uid
+	for i := 0; i < t.cfg.Online; i++ {
+		t.uids = append(t.uids, t.s.genUid(i))
+	}
+
 	go t.loop()
 	go t.run()
 }
@@ -53,10 +58,6 @@ func (t *onlineTask) running() bool {
 }
 
 func (t *onlineTask) run() {
-	// 生成用户uid
-	for i := 0; i < t.cfg.Online; i++ {
-		t.uids = append(t.uids, t.s.genUid(i))
-	}
 
 	// 分配上线用户，如果需要上线用户数量超过1万，则需要分批上线，每批5000个用户
 	if t.cfg.Online > t.s.opts.OnlinePerBatch {
@@ -239,6 +240,13 @@ func (t *onlineTask) randomOnlineUser() string {
 	return t.uids[rd]
 }
 
+// 获取指定用户的client
+func (t *onlineTask) getUserClient(uid string) *testClient {
+	t.userClientMapLock.Lock()
+	defer t.userClientMapLock.Unlock()
+	return t.userClientMap[uid]
+}
+
 // 获取一个随机在线用户的client
 func (t *onlineTask) randomOnlineClient() *testClient {
 	uid := t.randomOnlineUser()
@@ -267,6 +275,21 @@ func (t *onlineTask) randomOnlineClient() *testClient {
 	}
 
 	return cli
+}
+
+// 等待上线完成
+func (t *onlineTask) waitOnlineFinished() {
+	tk := time.NewTicker(time.Millisecond * 10)
+	for {
+		select {
+		case <-tk.C:
+			if t.onlineFinished {
+				return
+			}
+		case <-t.stopC:
+			return
+		}
+	}
 }
 
 type testClient struct {

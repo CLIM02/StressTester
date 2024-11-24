@@ -99,4 +99,5 @@ type channelInfoReq struct {
 type channelCreateReq struct {
 	channelInfoReq
 	Subscribers []string `json:"subscribers"` // 订阅者
+	Reset       int      `json:"reset"`       // 是否重置订阅者
 }
