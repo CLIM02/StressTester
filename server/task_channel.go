@@ -1,16 +1,14 @@
 package server
 
 import (
-	"context"
-	"crypto/rand"
 	"fmt"
 	"log"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/WuKongIM/WuKongIM/pkg/client"
-	"golang.org/x/sync/errgroup"
+	"github.com/WuKongIM/StressTester/pkg/client"
+	"golang.org/x/exp/rand"
 )
 
 type channelTask struct {
@@ -24,14 +22,20 @@ type channelTask struct {
 	stopC                 chan struct{}
 
 	tick int
+
+	subscribers       []string // 订阅者
+	onlineSubscribers []string // 在线订阅者
+
+	taskIndex int // 任务下标，来区分频道id
 }
 
-func newChannelTask(channelCfg *channelCfg, s *server) task {
+func newChannelTask(taskIndex int, channelCfg *channelCfg, s *server) task {
 	return &channelTask{
 		channelCfg:      channelCfg,
 		s:               s,
 		channelStatsMap: make(map[string]*channelStats),
 		stopC:           make(chan struct{}),
+		taskIndex:       taskIndex,
 	}
 }
 
@@ -46,8 +50,10 @@ func (c *channelTask) start() {
 }
 
 func (c *channelTask) stop() {
+	c.createChannelFinished = false
 	c.isRunning.Store(false)
 	close(c.stopC)
+
 }
 
 func (c *channelTask) running() bool {
@@ -58,7 +64,7 @@ func (c *channelTask) run() {
 
 	// 生成频道id
 	for i := 0; i < c.channelCfg.Count; i++ {
-		c.channelIds = append(c.channelIds, c.s.genChannelId(i))
+		c.channelIds = append(c.channelIds, c.s.genChannelId(c.taskIndex, i))
 	}
 
 	// 分批创建频道
@@ -81,8 +87,6 @@ func (c *channelTask) run() {
 
 	c.createChannelFinished = true
 
-	log.Printf("创建频道完成...")
-
 }
 
 // 创建频道 (startIndex, endIndex]
@@ -102,9 +106,8 @@ func (c *channelTask) createChannel(startIndex, endIndex int) {
 
 }
 
-func (c *channelTask) createChannelWithIds(channelIds []string) {
-	onlineTask := c.getOnlineTask()
-
+func (c *channelTask) createSubscribers() {
+	onlineTask := c.s.getOnlineTask()
 	// 生成订阅者
 	subscribers := make([]string, 0, c.channelCfg.Subscriber.Count)
 	// 如果订阅者在线人数小于等于频道在线人数，则直接使用订阅者
@@ -115,6 +118,10 @@ func (c *channelTask) createChannelWithIds(channelIds []string) {
 		log.Printf("warn: user online count less than subscriber online count")
 	}
 
+	// 在线订阅者
+	c.onlineSubscribers = make([]string, len(subscribers))
+	copy(c.onlineSubscribers, subscribers)
+
 	// 填充离线订阅者
 	if len(subscribers) < c.channelCfg.Subscriber.Count {
 		for i := len(subscribers); i < c.channelCfg.Subscriber.Count; i++ {
@@ -122,39 +129,36 @@ func (c *channelTask) createChannelWithIds(channelIds []string) {
 			subscribers = append(subscribers, c.s.genUid(onlineTask.cfg.Online+i+10000))
 		}
 	}
+	c.subscribers = subscribers
+}
 
+func (c *channelTask) createChannelWithIds(channelIds []string) {
+
+	if len(c.subscribers) == 0 {
+		c.createSubscribers()
+	}
 	// 创建频道
-	timeoutCtx, cancel := context.WithTimeout(c.s.serverCtx, 5*time.Minute)
-	defer cancel()
-	g, _ := errgroup.WithContext(timeoutCtx)
-	g.SetLimit(20)
 	for _, channelId := range channelIds {
 		if !c.isRunning.Load() {
 			break
 		}
 
-		channelId := channelId
-
-		g.Go(func() error {
-			err := c.s.api.createChannel(&channelCreateReq{
-				channelInfoReq: channelInfoReq{
-					ChannelId:   channelId,
-					ChannelType: uint8(c.channelCfg.Type),
-				},
-				Subscribers: subscribers,
-				Reset:       1,
-			})
-			if err != nil {
-				panic(fmt.Sprintf("create channel error: %s", err))
-			}
-			c.channelStatsMapLock.Lock()
-			c.channelStatsMap[channelId] = &channelStats{}
-			c.channelStatsMapLock.Unlock()
-			return nil
+		err := c.s.api.createChannel(&channelCreateReq{
+			channelInfoReq: channelInfoReq{
+				ChannelId:   channelId,
+				ChannelType: uint8(c.channelCfg.Type),
+			},
+			Subscribers: c.subscribers,
+			Reset:       1,
 		})
+		if err != nil {
+			panic(fmt.Sprintf("create channel error: %s", err))
+		}
+		c.channelStatsMapLock.Lock()
+		c.channelStatsMap[channelId] = &channelStats{}
+		c.channelStatsMapLock.Unlock()
 
 	}
-	_ = g.Wait()
 }
 
 func (c *channelTask) sendLoop() {
@@ -173,7 +177,12 @@ func (c *channelTask) sendLoop() {
 
 func (c *channelTask) willSendMsg() {
 
-	if !c.createChannelFinished {
+	if !c.createChannelFinished { // 频道创建成功后才能发送消息
+		return
+	}
+
+	onlineTask := c.s.getOnlineTask()
+	if !onlineTask.onlineFinished {
 		return
 	}
 
@@ -193,17 +202,9 @@ func (c *channelTask) willSendMsg() {
 	c.sendMsg(msgCount)
 }
 
-func (c *channelTask) getOnlineTask() *onlineTask {
-	task := c.s.getTask(taskOnline)
-	if task == nil {
-		return nil
-	}
-	return task.(*onlineTask)
-}
-
 func (c *channelTask) sendMsg(msgCount int) {
 
-	onlineTask := c.getOnlineTask()
+	onlineTask := c.s.getOnlineTask()
 	if onlineTask == nil {
 		return
 	}
@@ -211,11 +212,6 @@ func (c *channelTask) sendMsg(msgCount int) {
 	if !onlineTask.onlineFinished {
 		return
 	}
-
-	timeoutCtx, cancel := context.WithTimeout(c.s.serverCtx, 5*time.Minute)
-	defer cancel()
-	g, _ := errgroup.WithContext(timeoutCtx)
-	g.SetLimit(100)
 
 	// 生成指定大小的随机byte数组
 	msg := make([]byte, c.s.opts.MsgByteSize)
@@ -230,33 +226,43 @@ func (c *channelTask) sendMsg(msgCount int) {
 			if !c.isRunning.Load() {
 				break
 			}
-			channelId := channelId
-			g.Go(func() error {
-				cli := onlineTask.randomOnlineClient()
-				if cli == nil {
-					return nil
+
+			cli := c.randomOnlineSubscriberClient()
+			if cli == nil {
+				continue
+			}
+			if !cli.isConnected() {
+				continue
+			}
+			err = cli.send(&client.Channel{
+				ChannelID:   channelId,
+				ChannelType: uint8(c.channelCfg.Type),
+			}, msg)
+			if err != nil {
+				log.Printf("send msg error: %s", err)
+			} else {
+				c.channelStatsMapLock.Lock()
+				stats, ok := c.channelStatsMap[channelId]
+				if ok {
+					stats.sendMsgCount++
 				}
-				err = cli.send(&client.Channel{
-					ChannelID:   channelId,
-					ChannelType: uint8(c.channelCfg.Type),
-				}, msg)
-				if err != nil {
-					log.Printf("send msg error: %s", err)
-				} else {
-					c.channelStatsMapLock.Lock()
-					stats, ok := c.channelStatsMap[channelId]
-					if ok {
-						stats.sendMsgCount++
-					}
-					c.channelStatsMapLock.Unlock()
-				}
-				return nil
-			})
+				c.channelStatsMapLock.Unlock()
+			}
 		}
 	}
 
-	_ = g.Wait()
+}
 
+// 获取一个随机在线订阅者客户端
+func (c *channelTask) randomOnlineSubscriberClient() *testClient {
+	if len(c.onlineSubscribers) == 0 {
+		return nil
+	}
+	uid := c.onlineSubscribers[rand.Intn(len(c.onlineSubscribers))]
+
+	onlineTask := c.s.getOnlineTask()
+
+	return onlineTask.getUserClient(uid)
 }
 
 func (c *channelTask) reCreateChannelIfNeeded() {

@@ -7,16 +7,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/WuKongIM/WuKongIM/pkg/client"
+	"github.com/WuKongIM/StressTester/pkg/client"
 	"github.com/WuKongIM/WuKongIM/pkg/wklog"
 	wkproto "github.com/WuKongIM/WuKongIMGoProto"
 	"go.uber.org/zap"
 	"golang.org/x/exp/rand"
 )
-
-func init() {
-	rand.Seed(uint64(time.Now().UnixNano()))
-}
 
 type p2pTask struct {
 	isRunning atomic.Bool
@@ -50,6 +46,7 @@ func (p *p2pTask) start() {
 
 func (p *p2pTask) stop() {
 	p.isRunning.Store(false)
+	close(p.stopC)
 }
 
 func (p *p2pTask) generateData() {
@@ -136,6 +133,9 @@ func (p *p2pTask) sendMsg(msgCount int) {
 			fromClient := onlineTask.getUserClient(fromUid)
 			if fromClient == nil {
 				p.Info("发送者的客户端没有找到 ---> %s", zap.String("fromUid", fromUid))
+				continue
+			}
+			if !fromClient.isConnected() {
 				continue
 			}
 			err := fromClient.send(&client.Channel{

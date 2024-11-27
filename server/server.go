@@ -4,11 +4,19 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/WuKongIM/StressTester/pkg/wkhttp"
+	"golang.org/x/exp/rand"
 )
 
+func init() {
+	rand.Seed(uint64(time.Now().UnixNano()))
+}
+
 type server struct {
+	stats // 统计信息
+
 	r    *wkhttp.WKHttp
 	opts *Options
 	api  *wuKongImApi
@@ -19,13 +27,12 @@ type server struct {
 	tasksLock sync.RWMutex
 	tasks     []task
 	taskCfg   *taskCfg
+
+	taskStartTime time.Time // 任务开始时间
 }
 
 func New(opts *Options) *server {
 	r := wkhttp.New()
-
-	fmt.Println("opts-->", opts.Id)
-
 	s := &server{
 		opts: opts,
 		r:    r,
@@ -57,6 +64,12 @@ func (s *server) addTask(t task) {
 	s.tasks = append(s.tasks, t)
 }
 
+func (s *server) removeAllTask() {
+	s.tasksLock.Lock()
+	defer s.tasksLock.Unlock()
+	s.tasks = s.tasks[:0]
+}
+
 func (s *server) getTask(taskType taskType) task {
 	s.tasksLock.RLock()
 	defer s.tasksLock.RUnlock()
@@ -76,14 +89,20 @@ func (s *server) startTask() error {
 	if s.taskCfg == nil {
 		return fmt.Errorf("task config is nil")
 	}
+
+	s.taskStartTime = time.Now()
+	s.stats = stats{}
+
+	s.removeAllTask()
+
 	// 在线任务
 	t := newOnlineTask(s)
 	s.addTask(t)
 	t.start()
 
 	// 频道任务
-	for _, channelCfg := range s.taskCfg.Channels {
-		t := newChannelTask(channelCfg, s)
+	for index, channelCfg := range s.taskCfg.Channels {
+		t := newChannelTask(index, channelCfg, s)
 		s.addTask(t)
 		t.start()
 	}
@@ -95,12 +114,20 @@ func (s *server) startTask() error {
 		p.start()
 	}
 
+	// 统计任务
+	stats := newStatsTask(s)
+	s.addTask(stats)
+	stats.start()
+
 	return nil
 }
 
 func (s *server) stopTask() {
 	s.tasksLock.Lock()
 	defer s.tasksLock.Unlock()
+
+	s.taskStartTime = time.Time{}
+
 	for _, t := range s.tasks {
 		t.stop()
 	}
@@ -125,6 +152,14 @@ func (s *server) genUid(index int) string {
 }
 
 // 生成频道id
-func (s *server) genChannelId(index int) string {
-	return fmt.Sprintf("%s%07d", s.taskCfg.ChannelPrefix, index)
+func (s *server) genChannelId(taskIndex, index int) string {
+	return fmt.Sprintf("%s%d:%07d", s.taskCfg.ChannelPrefix, taskIndex, index)
+}
+
+func (s *server) getOnlineTask() *onlineTask {
+	task := s.getTask(taskOnline)
+	if task == nil {
+		return nil
+	}
+	return task.(*onlineTask)
 }

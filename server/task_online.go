@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/WuKongIM/WuKongIM/pkg/client"
+	"github.com/WuKongIM/StressTester/pkg/client"
 	"golang.org/x/exp/rand"
 	"golang.org/x/sync/errgroup"
 )
@@ -19,7 +19,6 @@ type onlineTask struct {
 	userClientMap     map[string]*testClient
 	userClientMapLock sync.RWMutex
 	isRunning         atomic.Bool
-	currentOnline     int  // 当前在线用户数
 	onlineFinished    bool // 是否已经上线完成
 	stopC             chan struct{}
 }
@@ -49,8 +48,25 @@ func (t *onlineTask) start() {
 }
 
 func (t *onlineTask) stop() {
+	t.onlineFinished = false
 	t.isRunning.Store(false)
+	t.stopAllClient()
 	close(t.stopC)
+}
+
+func (t *onlineTask) stopAllClient() {
+	clients := t.allClient()
+	for _, cli := range clients {
+		if cli.isConnected() {
+			_ = cli.cli.FlushTimeout(time.Second)
+		}
+	}
+	time.Sleep(time.Second * 2) // 等数据flush完
+	for _, cli := range clients {
+		if cli.isConnected() {
+			cli.close()
+		}
+	}
 }
 
 func (t *onlineTask) running() bool {
@@ -121,7 +137,7 @@ func (t *onlineTask) online(startIndex, endIndex int) {
 			t.userClientMapLock.Unlock()
 			cli := client.New(tcpAddr, client.WithUID(uid), client.WithAutoReconn(false))
 
-			testCli := newTestClient(cli)
+			testCli := newTestClient(uid, cli, t.s)
 			err := testCli.connect()
 			if err != nil {
 				log.Printf("connect error: %s", err)
@@ -142,7 +158,6 @@ func (t *onlineTask) loop() {
 	for {
 		select {
 		case <-ticker.C:
-			t.countOnline()
 			if !t.isRunning.Load() {
 				return
 			}
@@ -181,7 +196,7 @@ func (t *onlineTask) reconnectIfNeed() {
 
 			tcpAddr := tpcAddrMap[uid]
 			cli := client.New(tcpAddr, client.WithUID(uid), client.WithAutoReconn(false))
-			testCli := newTestClient(cli)
+			testCli := newTestClient(uid, cli, t.s)
 			err := testCli.connect()
 			if err != nil {
 				log.Printf("reconnect error: %s", err)
@@ -212,23 +227,15 @@ func (t *onlineTask) reconnectIfNeed() {
 	}
 }
 
-// 统计在线用户数
-func (t *onlineTask) countOnline() {
-
-	ct := 0
-
-	for _, uid := range t.uids {
-		t.userClientMapLock.RLock()
-		cli := t.userClientMap[uid]
-		t.userClientMapLock.RUnlock()
-		if cli == nil {
-			continue
-		}
-		if cli.isConnected() {
-			ct++
-		}
+// 获取所有在线用户
+func (t *onlineTask) allClient() []*testClient {
+	t.userClientMapLock.RLock()
+	defer t.userClientMapLock.RUnlock()
+	var clients []*testClient
+	for _, cli := range t.userClientMap {
+		clients = append(clients, cli)
 	}
-	t.currentOnline = ct
+	return clients
 }
 
 // 获取一个随机在线用户
@@ -237,6 +244,14 @@ func (t *onlineTask) randomOnlineUser() string {
 		return ""
 	}
 	rd := rand.Intn(len(t.uids))
+	return t.uids[rd]
+}
+
+func (t *onlineTask) randomOnlineUserMax(end int) string {
+	if len(t.uids) == 0 {
+		return ""
+	}
+	rd := rand.Intn(end)
 	return t.uids[rd]
 }
 
@@ -277,6 +292,36 @@ func (t *onlineTask) randomOnlineClient() *testClient {
 	return cli
 }
 
+// 获取一个随机在线用户的client
+func (t *onlineTask) randomOnlineClientMax(max int) *testClient {
+	uid := t.randomOnlineUserMax(max)
+	t.userClientMapLock.Lock()
+	defer t.userClientMapLock.Unlock()
+	cli := t.userClientMap[uid]
+
+	// 如果是空的，重新获取一个
+	if cli == nil {
+		uid = t.randomOnlineUserMax(max)
+		cli = t.userClientMap[uid]
+	}
+
+	// 再来一次
+	if cli == nil {
+		uid = t.randomOnlineUserMax(max)
+		cli = t.userClientMap[uid]
+	}
+
+	// 如果还是空则随便返回一个
+	if cli == nil {
+		for _, c := range t.userClientMap {
+			cli = c
+			break
+		}
+	}
+
+	return cli
+}
+
 // 等待上线完成
 func (t *onlineTask) waitOnlineFinished() {
 	tk := time.NewTicker(time.Millisecond * 10)
@@ -290,26 +335,4 @@ func (t *onlineTask) waitOnlineFinished() {
 			return
 		}
 	}
-}
-
-type testClient struct {
-	cli *client.Client
-}
-
-func newTestClient(cli *client.Client) *testClient {
-	return &testClient{
-		cli: cli,
-	}
-}
-
-func (t *testClient) connect() error {
-	return t.cli.Connect()
-}
-
-func (t *testClient) isConnected() bool {
-	return t.cli.IsConnected()
-}
-
-func (t *testClient) send(ch *client.Channel, payload []byte) error {
-	return t.cli.SendMessage(ch, payload)
 }

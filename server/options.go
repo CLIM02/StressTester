@@ -130,6 +130,39 @@ func (o *Options) genId() string {
 	return id
 }
 
+// 获取下一个测试序号
+func (o *Options) nextTestSeq() int {
+	filename := path.Join(o.DataDir, "seq")
+
+	// 读取文件内容
+	data, err := os.ReadFile(filename)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// 文件不存在，初始化为 0
+			data = []byte("0")
+		} else {
+			panic(err)
+		}
+	}
+
+	// 将文件内容转换为整数
+	seq, err := strconv.Atoi(string(data))
+	if err != nil {
+		panic(err)
+	}
+
+	// 序号加 1
+	seq++
+
+	// 将新的序号写入文件
+	err = os.WriteFile(filename, []byte(strconv.Itoa(seq)), 0644)
+	if err != nil {
+		panic(err)
+	}
+
+	return seq
+}
+
 func (o *Options) readServerAddr() string {
 	if o.Server != "" {
 		return o.Server

@@ -2,3 +2,7 @@
 stressdata/
 
 fatal.log
+
+info.log
+warn.log
+error.log
