@@ -1,6 +1,7 @@
 package server
 
 import (
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -82,6 +83,9 @@ func (s *statsTask) countOnline() {
 
 // 统计消息
 func (s *statsTask) countMsg() {
+
+	fmt.Println("countMsg--->", s.s.testCount.Load())
+
 	onlineTask := s.getOnlineTask()
 	clients := onlineTask.allClient()
 	var (
@@ -127,6 +131,18 @@ func (s *statsTask) countMsg() {
 	s.s.recvBytes.Store(recvBytes)
 	s.s.recvRate.Store(batchRecv / (int64(s.intervalSecond)))
 	s.s.recvBytesRate.Store(batchRecvBytes / int64(s.intervalSecond))
+
+	channelTasks := s.s.getChannelTasks()
+	var expectRecv int64
+	for _, task := range channelTasks {
+		expectRecv += task.expectRecvMsgCount()
+	}
+	task := s.s.getP2pTask()
+	if task != nil {
+		expectRecv += task.sendMsgCount.Load()
+	}
+	s.s.expectRecv.Store(expectRecv)
+
 }
 
 func (s *statsTask) getOnlineTask() *onlineTask {
@@ -135,4 +151,12 @@ func (s *statsTask) getOnlineTask() *onlineTask {
 		return nil
 	}
 	return task.(*onlineTask)
+}
+
+func (s *statsTask) getChannelTask() *channelTask {
+	task := s.s.getTask(taskChannel)
+	if task == nil {
+		return nil
+	}
+	return task.(*channelTask)
 }

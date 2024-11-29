@@ -71,12 +71,12 @@ go run main.go
 
 ```
 
-压测试结果
+压测试报告
 
 ```shell
 
 请求方式: GET
-请求地址: /v1/stress/result
+请求地址: /v1/stress/report
 
 返回参数
 {

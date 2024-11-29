@@ -36,6 +36,7 @@ type testClient struct {
 	recvMapLock sync.RWMutex
 	recvMap     map[int64]int64 // 接收消息的记录,key为messageId，值为接收时间戳
 	uid         string
+	stopC       chan struct{}
 }
 
 func newTestClient(uid string, cli *client.Client, s *server) *testClient {
@@ -47,15 +48,18 @@ func newTestClient(uid string, cli *client.Client, s *server) *testClient {
 		sendSuccessMap: make(map[int64]int64),
 		recvMap:        make(map[int64]int64),
 		uid:            uid,
+		stopC:          make(chan struct{}),
 	}
 
 	onlineTask := s.getOnlineTask()
 
 	cli.SetOnRecv(func(recv *wkproto.RecvPacket) error {
 
-		t.recvMapLock.Lock()
-		t.recvMap[recv.MessageID] = time.Now().UnixNano()
-		t.recvMapLock.Unlock()
+		s.testCount.Add(1)
+
+		// t.recvMapLock.Lock()
+		// t.recvMap[recv.MessageID] = time.Now().UnixNano()
+		// t.recvMapLock.Unlock()
 
 		t.recvCount.Inc()
 		t.recvBytes.Add(int64(recv.Size()))
@@ -116,7 +120,29 @@ func newTestClient(uid string, cli *client.Client, s *server) *testClient {
 
 	})
 
+	go t.cleanLoop()
+
 	return t
+}
+
+func (t *testClient) cleanLoop() {
+	tk := time.NewTicker(time.Second * 10)
+	for {
+		select {
+		case <-tk.C:
+			t.sendSuccessMapLock.Lock()
+			for k, v := range t.sendSuccessMap {
+				milliseconds := (time.Now().UnixNano() - v) / 1e6
+				if milliseconds > 40000 { // 40s
+					delete(t.sendSuccessMap, k)
+				}
+			}
+			t.sendSuccessMapLock.Unlock()
+		case <-t.stopC:
+			return
+
+		}
+	}
 }
 
 func (t *testClient) connect() error {
@@ -144,5 +170,6 @@ func (t *testClient) send(ch *client.Channel, payload []byte) error {
 }
 
 func (t *testClient) close() {
+	close(t.stopC)
 	t.cli.Close()
 }

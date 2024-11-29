@@ -17,6 +17,7 @@ type stats struct {
 	sendAvgLatency atomic.Int64 // 发送平均延迟 (毫秒)
 
 	recv           atomic.Int64 // 接收消息数
+	expectRecv     atomic.Int64 // 预期接收消息数
 	recvRate       atomic.Int64 // 接收消息速率 (条/秒)
 	recvBytes      atomic.Int64 // 接收字节数
 	recvBytesRate  atomic.Int64 // 接收字节速率 (字节/秒)

@@ -21,8 +21,6 @@ type channelTask struct {
 	channelStatsMapLock   sync.RWMutex
 	stopC                 chan struct{}
 
-	tick int
-
 	subscribers       []string // 订阅者
 	onlineSubscribers []string // 在线订阅者
 
@@ -186,23 +184,17 @@ func (c *channelTask) willSendMsg() {
 		return
 	}
 
-	c.tick++
-
 	msgCount := c.channelCfg.MsgRate / 60 // 每秒发送消息数量
-	var tickCount int
+	var probability float64 = 0           // 少于一分钟的消息发送概率
 	if c.channelCfg.MsgRate%60 > 0 {
-		tickCount = 60 / (c.channelCfg.MsgRate % 60) // 多少个tick发送一次消息
+		probability = float64(c.channelCfg.MsgRate%60) / float64(60)
+
 	}
 
-	if tickCount > 0 && c.tick >= tickCount {
-		c.tick = 0
-		msgCount++
-	}
-
-	c.sendMsg(msgCount)
+	c.sendMsg(msgCount, probability)
 }
 
-func (c *channelTask) sendMsg(msgCount int) {
+func (c *channelTask) sendMsg(msgCount int, probability float64) {
 
 	onlineTask := c.s.getOnlineTask()
 	if onlineTask == nil {
@@ -214,43 +206,66 @@ func (c *channelTask) sendMsg(msgCount int) {
 	}
 
 	// 生成指定大小的随机byte数组
-	msg := make([]byte, c.s.opts.MsgByteSize)
-	_, _ = rand.Read(msg)
-
-	var err error
-	for i := 0; i < msgCount; i++ {
-		if !c.isRunning.Load() {
-			break
+	msg := c.s.getMockMsg()
+	randSend := func(channelId string) {
+		cli := c.randomOnlineSubscriberClient()
+		if cli == nil {
+			return
 		}
-		for _, channelId := range c.channelIds {
+		if !cli.isConnected() {
+			return
+		}
+		err := cli.send(&client.Channel{
+			ChannelID:   channelId,
+			ChannelType: uint8(c.channelCfg.Type),
+		}, msg)
+		if err != nil {
+			log.Printf("send msg error: %s", err)
+		} else {
+			c.channelStatsMapLock.Lock()
+			stats, ok := c.channelStatsMap[channelId]
+			if ok {
+				stats.sendMsgCount++
+			}
+			c.channelStatsMapLock.Unlock()
+		}
+	}
+
+	if msgCount > 0 {
+		for i := 0; i < msgCount; i++ {
 			if !c.isRunning.Load() {
 				break
 			}
-
-			cli := c.randomOnlineSubscriberClient()
-			if cli == nil {
-				continue
-			}
-			if !cli.isConnected() {
-				continue
-			}
-			err = cli.send(&client.Channel{
-				ChannelID:   channelId,
-				ChannelType: uint8(c.channelCfg.Type),
-			}, msg)
-			if err != nil {
-				log.Printf("send msg error: %s", err)
-			} else {
-				c.channelStatsMapLock.Lock()
-				stats, ok := c.channelStatsMap[channelId]
-				if ok {
-					stats.sendMsgCount++
+			for _, channelId := range c.channelIds {
+				if !c.isRunning.Load() {
+					break
 				}
-				c.channelStatsMapLock.Unlock()
+				randSend(channelId)
 			}
 		}
 	}
 
+	if probability > 0 {
+		for _, channelId := range c.channelIds {
+			if !c.isRunning.Load() {
+				break
+			}
+			if canSendMessage(probability) {
+				randSend(channelId)
+			}
+		}
+	}
+
+}
+
+// 是否可以发消息 probability 为设定的发消息的概率
+func canSendMessage(probability float64) bool {
+
+	// 生成一个0到1之间的随机浮点数
+	randomValue := rand.Float64()
+
+	// 如果随机值小于设定的概率，返回true表示可以发消息
+	return randomValue < probability
 }
 
 // 获取一个随机在线订阅者客户端
@@ -289,6 +304,17 @@ func (c *channelTask) reCreateChannelIfNeeded() {
 	// 重新创建
 	c.createChannelWithIds(failedChannelIds)
 
+}
+
+// 期望收到的消息数量
+func (c *channelTask) expectRecvMsgCount() int64 {
+	c.channelStatsMapLock.RLock()
+	defer c.channelStatsMapLock.RUnlock()
+	var count int64
+	for _, stats := range c.channelStatsMap {
+		count += (stats.sendMsgCount * int64(c.channelCfg.Subscriber.Online-1)) // c.channelCfg.Subscriber.Online-1 是因为发送者不接收消息
+	}
+	return count
 }
 
 // 频道统计

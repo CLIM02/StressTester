@@ -22,7 +22,7 @@ type p2pTask struct {
 	wklog.Log
 	stopC chan struct{}
 
-	tick int
+	sendMsgCount atomic.Int64 // 总共发送消息数量
 }
 
 func newP2pTask(cfg *p2pCfg, s *server) task {
@@ -96,56 +96,61 @@ func (p *p2pTask) willSendMsg() {
 		return
 	}
 
-	p.tick++
-
 	msgCount := p.cfg.MsgRate / 60 // 每秒发送消息数量
-	var tickCount int
+	var probability float64 = 0
 	if p.cfg.MsgRate%60 > 0 {
-		tickCount = 60 / (p.cfg.MsgRate % 60) // 多少个tick发送一次消息
+		probability = float64(p.cfg.MsgRate%60) / float64(60)
 	}
 
-	if tickCount > 0 && p.tick >= tickCount {
-		p.tick = 0
-		msgCount++
-	}
-	p.sendMsg(msgCount)
+	p.sendMsg(msgCount, probability)
 }
 
-func (p *p2pTask) sendMsg(msgCount int) {
+func (p *p2pTask) sendMsg(msgCount int, probability float64) {
 	onlineTask := p.getOnlineTask()
 	// 生成指定大小的随机byte数组
 	msg := make([]byte, p.s.opts.MsgByteSize)
 	_, _ = rand.Read(msg)
 
+	randSend := func(pair [2]string) {
+		k := rand.Intn(2)
+		fromUid := pair[k]
+		toUid := pair[0]
+		if k == 0 {
+			toUid = pair[1]
+		}
+
+		fromClient := onlineTask.getUserClient(fromUid)
+		if fromClient == nil {
+			p.Info("发送者的客户端没有找到 ---> %s", zap.String("fromUid", fromUid))
+			return
+		}
+		if !fromClient.isConnected() {
+			return
+		}
+		p.sendMsgCount.Add(1)
+		err := fromClient.send(&client.Channel{
+			ChannelID:   toUid,
+			ChannelType: wkproto.ChannelTypePerson,
+		}, msg)
+		if err != nil {
+			p.Error("send msg error", zap.Error(err), zap.String("fromUid", fromUid), zap.String("toUid", toUid))
+		}
+	}
+
 	for i := 0; i < msgCount; i++ {
 		if !p.isRunning.Load() {
 			break
 		}
-
 		for _, pair := range p.pairs {
-			k := rand.Intn(2)
-			fromUid := pair[k]
-			toUid := pair[0]
-			if k == 0 {
-				toUid = pair[1]
-			}
+			randSend(pair)
+		}
+	}
 
-			fromClient := onlineTask.getUserClient(fromUid)
-			if fromClient == nil {
-				p.Info("发送者的客户端没有找到 ---> %s", zap.String("fromUid", fromUid))
-				continue
+	if probability > 0 {
+		for _, pair := range p.pairs {
+			if canSendMessage(probability) {
+				randSend(pair)
 			}
-			if !fromClient.isConnected() {
-				continue
-			}
-			err := fromClient.send(&client.Channel{
-				ChannelID:   toUid,
-				ChannelType: wkproto.ChannelTypePerson,
-			}, msg)
-			if err != nil {
-				p.Error("send msg error", zap.Error(err), zap.String("fromUid", fromUid), zap.String("toUid", toUid))
-			}
-
 		}
 	}
 

@@ -61,7 +61,7 @@ func (t *onlineTask) stopAllClient() {
 			_ = cli.cli.FlushTimeout(time.Second)
 		}
 	}
-	time.Sleep(time.Second * 2) // 等数据flush完
+	time.Sleep(time.Second * 4) // 等数据flush完
 	for _, cli := range clients {
 		if cli.isConnected() {
 			cli.close()

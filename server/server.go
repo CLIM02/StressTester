@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/WuKongIM/StressTester/pkg/wkhttp"
+	"go.uber.org/atomic"
 	"golang.org/x/exp/rand"
 )
 
@@ -16,6 +17,8 @@ func init() {
 
 type server struct {
 	stats // 统计信息
+
+	testCount atomic.Int64 // 测试次数
 
 	r    *wkhttp.WKHttp
 	opts *Options
@@ -102,13 +105,16 @@ func (s *server) startTask() error {
 
 	// 频道任务
 	for index, channelCfg := range s.taskCfg.Channels {
+		if channelCfg.Count <= 0 {
+			continue
+		}
 		t := newChannelTask(index, channelCfg, s)
 		s.addTask(t)
 		t.start()
 	}
 
 	// 单聊
-	if s.taskCfg.P2p != nil {
+	if s.taskCfg.P2p != nil && s.taskCfg.P2p.Count > 0 {
 		p := newP2pTask(s.taskCfg.P2p, s)
 		s.addTask(p)
 		p.start()
@@ -162,4 +168,30 @@ func (s *server) getOnlineTask() *onlineTask {
 		return nil
 	}
 	return task.(*onlineTask)
+}
+
+func (s *server) getChannelTasks() []*channelTask {
+	s.tasksLock.RLock()
+	defer s.tasksLock.RUnlock()
+	var tasks []*channelTask
+	for _, t := range s.tasks {
+		if t.taskType() == taskChannel {
+			tasks = append(tasks, t.(*channelTask))
+		}
+	}
+	return tasks
+}
+
+func (s *server) getP2pTask() *p2pTask {
+	task := s.getTask(taskP2p)
+	if task == nil {
+		return nil
+	}
+	return task.(*p2pTask)
+}
+
+// 获取模拟的消息
+func (s *server) getMockMsg() []byte {
+
+	return []byte(`{"type":1,"content":"000000000000000000000000000000"}`)
 }
