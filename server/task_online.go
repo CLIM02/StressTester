@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/WuKongIM/StressTester/pkg/client"
 	"golang.org/x/exp/rand"
 	"golang.org/x/sync/errgroup"
 )
@@ -114,7 +113,7 @@ func (t *onlineTask) online(startIndex, endIndex int) {
 
 	// 获取用户tcp地址
 	onlineUids := t.uids[startIndex:endIndex]
-	userTcpAddrMap, err := t.s.api.route(onlineUids)
+	userTcpAddrMap, err := t.s.api.route(onlineUids, true)
 	if err != nil {
 		log.Printf("get user tcp addr error: %s", err)
 		return
@@ -124,7 +123,7 @@ func (t *onlineTask) online(startIndex, endIndex int) {
 	timeoutCtx, cancel := context.WithTimeout(t.s.serverCtx, 2*time.Minute)
 	defer cancel()
 	g, _ := errgroup.WithContext(timeoutCtx)
-	g.SetLimit(20)
+	g.SetLimit(5)
 
 	for _, uid := range onlineUids {
 		uid := uid
@@ -135,9 +134,8 @@ func (t *onlineTask) online(startIndex, endIndex int) {
 			t.userClientMapLock.Lock()
 			tcpAddr := userTcpAddrMap[uid]
 			t.userClientMapLock.Unlock()
-			cli := client.New(tcpAddr, client.WithUID(uid), client.WithAutoReconn(false))
 
-			testCli := newTestClient(uid, cli, t.s)
+			testCli := newTestClient(tcpAddr, uid, t.s)
 			err := testCli.connect()
 			if err != nil {
 				log.Printf("connect error: %s", err)
@@ -186,7 +184,7 @@ func (t *onlineTask) reconnectIfNeed() {
 
 	if len(needCreateUids) > 0 {
 		var err error
-		tpcAddrMap, err := t.s.api.route(needCreateUids)
+		tpcAddrMap, err := t.s.api.route(needCreateUids, true)
 		if err != nil {
 			log.Printf("get user tcp addr error: %s", err)
 			return
@@ -195,8 +193,7 @@ func (t *onlineTask) reconnectIfNeed() {
 		for _, uid := range needCreateUids {
 
 			tcpAddr := tpcAddrMap[uid]
-			cli := client.New(tcpAddr, client.WithUID(uid), client.WithAutoReconn(false))
-			testCli := newTestClient(uid, cli, t.s)
+			testCli := newTestClient(tcpAddr, uid, t.s)
 			err := testCli.connect()
 			if err != nil {
 				log.Printf("reconnect error: %s", err)

@@ -52,6 +52,7 @@ func (b *baseApi) exchange(c *wkhttp.Context) {
 		c.ResponseError(err)
 		return
 	}
+	b.s.api.baseURL = req.Server
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":     b.s.opts.Id,

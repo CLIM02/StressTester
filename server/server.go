@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/WuKongIM/StressTester/pkg/wkhttp"
+	"github.com/gin-contrib/pprof"
 	"go.uber.org/atomic"
 	"golang.org/x/exp/rand"
 )
@@ -59,6 +60,8 @@ func (s *server) setRoutes() {
 
 	baseApi := newBaseApi(s)
 	baseApi.route(s.r)
+
+	pprof.Register(s.r.GetGinRoute()) // 注册pprof
 }
 
 func (s *server) addTask(t task) {

@@ -89,6 +89,14 @@ func WithAutoReconn(autoReconn bool) Option {
 	}
 }
 
+func WithDefaultBufSize(defaultBufSize int) Option {
+
+	return func(o *Options) error {
+		o.DefaultBufSize = defaultBufSize
+		return nil
+	}
+}
+
 // SendOptions SendOptions
 type SendOptions struct {
 	NoPersist   bool // 是否不存储 默认 false

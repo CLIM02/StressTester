@@ -33,14 +33,13 @@ type testClient struct {
 	sendSuccessMapLock sync.RWMutex
 	sendSuccessMap     map[int64]int64 // 发送成功消息记录,key为messageId，值为发送时间戳
 
-	recvMapLock sync.RWMutex
-	recvMap     map[int64]int64 // 接收消息的记录,key为messageId，值为接收时间戳
-	uid         string
-	stopC       chan struct{}
+	recvMap map[int64]int64 // 接收消息的记录,key为messageId，值为接收时间戳
+	uid     string
+	stopC   chan struct{}
 }
 
-func newTestClient(uid string, cli *client.Client, s *server) *testClient {
-
+func newTestClient(tcpAddr, uid string, s *server) *testClient {
+	cli := client.New(tcpAddr, client.WithUID(uid), client.WithAutoReconn(false), client.WithDefaultBufSize(1024*100))
 	t := &testClient{
 		cli:            cli,
 		s:              s,

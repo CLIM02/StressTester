@@ -2,6 +2,7 @@ package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -20,10 +21,10 @@ func newWuKongImApi(baseURL string) *wuKongImApi {
 	}
 }
 
-// 获取用户的连接地址
-func (w *wuKongImApi) route(uids []string) (map[string]string, error) {
+// 获取用户的连接地址 intranet:表示是否获取内网连接地址
+func (w *wuKongImApi) route(uids []string, intranet bool) (map[string]string, error) {
 
-	resp, err := network.Post(w.getFullURL("/route/batch"), []byte(wkutil.ToJSON(uids)), nil)
+	resp, err := network.Post(w.getFullURL(fmt.Sprintf("/route/batch?intranet=%d", wkutil.BoolToInt(intranet))), []byte(wkutil.ToJSON(uids)), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +80,9 @@ func (w *wuKongImApi) handleError(resp *rest.Response) error {
 }
 
 func (w *wuKongImApi) getFullURL(path string) string {
-	return strings.TrimSuffix(w.baseURL, "/") + path
+	baseURL := strings.TrimSuffix(w.baseURL, "/")
+	baseURL = strings.TrimSpace(baseURL)
+	return baseURL + path
 }
 
 type userAddrResp struct {

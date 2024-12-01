@@ -160,30 +160,33 @@ func (p *p2pTask) running() bool {
 
 	return p.isRunning.Load()
 }
-
 func generateRandomPairs(users []string, numPairs int) ([][2]string, error) {
-	// 检查是否可能生成指定数量的对数
 	n := len(users)
 	maxPairs := n * (n - 1) / 2
 	if numPairs > maxPairs {
 		return nil, fmt.Errorf("指定的对数数量超出最大可能组合数量")
 	}
 
-	// 生成所有可能的对数
-	var allPairs [][2]string
-	for i := 0; i < n; i++ {
-		for j := i + 1; j < n; j++ {
-			allPairs = append(allPairs, [2]string{users[i], users[j]})
+	// 使用 Fisher-Yates 洗牌算法生成随机对数
+	pairs := make([][2]string, 0, numPairs)
+	used := make(map[[2]int]bool)
+
+	for len(pairs) < numPairs {
+		i := rand.Intn(n)
+		j := rand.Intn(n)
+		if i != j {
+			if i > j {
+				i, j = j, i
+			}
+			pair := [2]int{i, j}
+			if !used[pair] {
+				used[pair] = true
+				pairs = append(pairs, [2]string{users[i], users[j]})
+			}
 		}
 	}
 
-	// 随机打乱所有对数
-	rand.Shuffle(len(allPairs), func(i, j int) {
-		allPairs[i], allPairs[j] = allPairs[j], allPairs[i]
-	})
-
-	// 取前 numPairs 个对数
-	return allPairs[:numPairs], nil
+	return pairs, nil
 }
 
 // 给定对数，返回最少需要用户数量

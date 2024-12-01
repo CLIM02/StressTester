@@ -5,6 +5,7 @@ go 1.22.1
 require (
 	github.com/WuKongIM/WuKongIM v1.2.6
 	github.com/WuKongIM/WuKongIMGoProto v1.0.21
+	github.com/gin-contrib/pprof v1.4.0
 	github.com/gin-gonic/gin v1.10.0
 	github.com/google/uuid v1.6.0
 	github.com/sendgrid/rest v2.6.9+incompatible
