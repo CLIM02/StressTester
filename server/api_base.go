@@ -47,12 +47,17 @@ func (b *baseApi) exchange(c *wkhttp.Context) {
 		return
 	}
 
-	err := b.s.opts.writeServerAddr(req.Server)
+	server := req.Server
+	if strings.TrimSpace(b.s.opts.Server) != "" {
+		server = b.s.opts.Server
+	}
+
+	err := b.s.opts.writeServerAddr(server)
 	if err != nil {
 		c.ResponseError(err)
 		return
 	}
-	b.s.api.baseURL = req.Server
+	b.s.api.baseURL = server
 
 	c.JSON(http.StatusOK, gin.H{
 		"id":     b.s.opts.Id,

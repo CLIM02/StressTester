@@ -40,7 +40,10 @@ func (s *stressApi) start(c *wkhttp.Context) {
 		return
 	}
 
-	seq := s.s.opts.nextTestSeq()
+	seq := 0
+	if s.s.opts.NewSeq {
+		seq = s.s.opts.nextTestSeq()
+	}
 
 	if strings.TrimSpace(req.UserPrefix) == "" {
 		req.UserPrefix = fmt.Sprintf("%s:%d:usr:", s.s.opts.Id, seq)

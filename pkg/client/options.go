@@ -89,6 +89,7 @@ func WithAutoReconn(autoReconn bool) Option {
 	}
 }
 
+// WithDefaultBufSize
 func WithDefaultBufSize(defaultBufSize int) Option {
 
 	return func(o *Options) error {

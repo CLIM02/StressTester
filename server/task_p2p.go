@@ -107,9 +107,8 @@ func (p *p2pTask) willSendMsg() {
 
 func (p *p2pTask) sendMsg(msgCount int, probability float64) {
 	onlineTask := p.getOnlineTask()
-	// 生成指定大小的随机byte数组
-	msg := make([]byte, p.s.opts.MsgByteSize)
-	_, _ = rand.Read(msg)
+
+	msg := p.s.getMockMsg()
 
 	randSend := func(pair [2]string) {
 		k := rand.Intn(2)
@@ -121,7 +120,7 @@ func (p *p2pTask) sendMsg(msgCount int, probability float64) {
 
 		fromClient := onlineTask.getUserClient(fromUid)
 		if fromClient == nil {
-			p.Info("发送者的客户端没有找到 ---> %s", zap.String("fromUid", fromUid))
+			p.Info("发送者的客户端没有找到 ", zap.String("fromUid", fromUid))
 			return
 		}
 		if !fromClient.isConnected() {

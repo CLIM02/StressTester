@@ -490,7 +490,7 @@ func (c *Client) readLoop() {
 
 		}
 		if err != nil {
-			// fmt.Println("readLoop--err--->", err)
+			fmt.Println("readLoop--err--->", err)
 			c.processOpErr(err)
 			break
 		}

@@ -88,7 +88,10 @@ func newTestClient(tcpAddr, uid string, s *server) *testClient {
 	cli.SetOnSendack(func(sendackPacket *wkproto.SendackPacket) {
 
 		// 发送延迟统计
-		if start, ok := t.sendMap[sendackPacket.ClientSeq]; ok {
+		t.sendMapLock.RLock()
+		start, ok := t.sendMap[sendackPacket.ClientSeq]
+		t.sendMapLock.RUnlock()
+		if ok {
 
 			t.sendSuccessMapLock.Lock()
 			t.sendSuccessMap[sendackPacket.MessageID] = start

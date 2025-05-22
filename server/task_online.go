@@ -123,7 +123,7 @@ func (t *onlineTask) online(startIndex, endIndex int) {
 	timeoutCtx, cancel := context.WithTimeout(t.s.serverCtx, 2*time.Minute)
 	defer cancel()
 	g, _ := errgroup.WithContext(timeoutCtx)
-	g.SetLimit(5)
+	g.SetLimit(100)
 
 	for _, uid := range onlineUids {
 		uid := uid

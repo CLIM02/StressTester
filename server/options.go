@@ -26,6 +26,8 @@ type Options struct {
 	CreateChannelPerBatch int
 	// 消息大小
 	MsgByteSize int
+
+	NewSeq bool
 }
 
 func NewOptions(opts ...Option) *Options {
@@ -35,6 +37,7 @@ func NewOptions(opts ...Option) *Options {
 		OnlinePerBatch:        100,
 		CreateChannelPerBatch: 100,
 		MsgByteSize:           512,
+		NewSeq:                true,
 	}
 	for _, o := range opts {
 		o(defaultOpts)
@@ -199,5 +202,19 @@ func WithAddr(addr string) Option {
 func WithId(id string) Option {
 	return func(o *Options) {
 		o.Id = id
+	}
+}
+
+func WithNewSeq(seq bool) Option {
+
+	return func(o *Options) {
+		o.NewSeq = seq
+	}
+}
+
+func WithServer(server string) Option {
+
+	return func(o *Options) {
+		o.Server = server
 	}
 }
