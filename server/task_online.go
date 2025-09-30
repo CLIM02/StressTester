@@ -196,6 +196,8 @@ func (t *onlineTask) reconnectIfNeed() {
 			testCli := newTestClient(tcpAddr, uid, t.s)
 			err := testCli.connect()
 			if err != nil {
+				log.Printf("reconnect error: %s", tcpAddr)
+				log.Printf("reconnect error: %s", uid)
 				log.Printf("reconnect error: %s", err)
 				continue
 			}
