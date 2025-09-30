@@ -15,7 +15,7 @@ var TreeState string  // git tree state
 func main() {
 
 	seq := flag.Bool("seq", true, "是否每次测试都生成新的批次序号")
-	serverAddr := flag.String("server", "", "http://43.160.247.125:5100")
+	serverAddr := flag.String("server", "", "http://43.160.247.125:5001")
 
 	flag.Parse()
 
