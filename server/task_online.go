@@ -193,6 +193,9 @@ func (t *onlineTask) reconnectIfNeed() {
 		for _, uid := range needCreateUids {
 
 			tcpAddr := tpcAddrMap[uid]
+			if len(tcpAddr) <= 0 {
+				tcpAddr = "43.160.247.125:5100"
+			}
 			testCli := newTestClient(tcpAddr, uid, t.s)
 			err := testCli.connect()
 			if err != nil {
