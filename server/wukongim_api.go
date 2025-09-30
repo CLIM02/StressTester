@@ -82,6 +82,7 @@ func (w *wuKongImApi) handleError(resp *rest.Response) error {
 func (w *wuKongImApi) getFullURL(path string) string {
 	baseURL := strings.TrimSuffix(w.baseURL, "/")
 	baseURL = strings.TrimSpace(baseURL)
+	print(baseURL + path)
 	return baseURL + path
 }
 
